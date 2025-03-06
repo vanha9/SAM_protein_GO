@@ -17,7 +17,7 @@ import warnings
 warnings.filterwarnings("ignore")
 
 
-def train(config, suffix, args):
+def train(config, args):
 
     train_set = GoTermDataset("train", config.AF2model)
     #pos_weights = torch.tensor(train_set.pos_weights).float()
@@ -27,7 +27,7 @@ def train(config, suffix, args):
     
     
     output_dim = valid_set.y_true.shape[-1]
-    model = CL_protNET(output_dim, config.esmembed, config.contrast, num_supernode=args.num_node, device_model=config.device, args=args).to(config.device)
+    model = CL_protNET(output_dim, config.esmembed, num_supernode=args.num_node, device_model=config.device, args=args).to(config.device)
     optimizer = torch.optim.Adam(
         params = model.parameters(), 
         **config.optimizer,
@@ -51,42 +51,25 @@ def train(config, suffix, args):
         # scheduler.step()
         for idx_batch, batch in enumerate(tqdm(train_loader)):
             model.train()
-            
-            if config.contrast:
-                y_pred_bp, y_pred_mf, y_pred_cc, gcn_g_feat_bp1, gcn_g_feat_mf1, gcn_g_feat_cc1, gcn_g_feat_bp2, gcn_g_feat_mf2, gcn_g_feat_cc2, decorrelation_loss = model(batch[0].to(config.device), batch[2].to(config.device), batch[3].to(config.device), batch[4])
-                y_true = batch[1]
-                y_true_at = torch.split(y_true, [1943, 489, 320], dim=1)
+            y_pred_bp, y_pred_mf, y_pred_cc, decorrelation_loss = model(batch[0].to(config.device), batch[2].to(config.device), batch[3].to(config.device), batch[4])
 
-                y_true_bp = y_true_at[0].to(config.device)
-                _loss_bp = bce_loss(y_pred_bp, y_true_bp)
-                _loss_bp = _loss_bp.mean()
+            y_true = batch[1].to(config.device)
+            y_true_at = torch.split(y_true, [1943, 489, 320], dim=1)
 
-                y_true_mf = y_true_at[1].to(config.device)
-                _loss_mf = bce_loss(y_pred_mf, y_true_mf)
-                _loss_mf = _loss_mf.mean()
+            y_true_bp = y_true_at[0].to(config.device)
+            _loss_bp = bce_loss(y_pred_bp, y_true_bp)
+            _loss_bp = _loss_bp.mean()
 
-                y_true_cc = y_true_at[2].to(config.device)
-                _loss_cc = bce_loss(y_pred_cc, y_true_cc)
-                _loss_cc = _loss_cc.mean()
+            y_true_mf = y_true_at[1].to(config.device)
+            _loss_mf = bce_loss(y_pred_mf, y_true_mf)
+            _loss_mf = _loss_mf.mean()
 
-                criterion_bp = NT_Xent(gcn_g_feat_bp1.shape[0], 0.1, 1)
-                cl_loss_bp = 0.05 * criterion_bp(gcn_g_feat_bp1, gcn_g_feat_bp2)
+            y_true_cc = y_true_at[2].to(config.device)
+            _loss_cc = bce_loss(y_pred_cc, y_true_cc)
+            _loss_cc = _loss_cc.mean()
                 
-                criterion_mf = NT_Xent(gcn_g_feat_mf1.shape[0], 0.1, 1)
-                cl_loss_mf = 0.05 * criterion_mf(gcn_g_feat_mf1, gcn_g_feat_mf2)
-
-                criterion_cc = NT_Xent(gcn_g_feat_cc1.shape[0], 0.1, 1)
-                cl_loss_cc = 0.05 * criterion_cc(gcn_g_feat_cc1, gcn_g_feat_cc2)
-                
-                loss = _loss_bp + _loss_mf + _loss_cc + cl_loss_bp + cl_loss_mf + cl_loss_cc + decorrelation_loss * 1e-6
-            else:
-                y_pred_bp, y_pred_mf, y_pred_cc, decorrelation_loss = model(batch[0].to(config.device), batch[2].to(config.device), batch[3].to(config.device), batch[4])
-
-                y_true = batch[1].to(config.device)
-                
-                loss = bce_loss(y_pred, y_true)
-                loss = loss.mean()
-                loss = loss + decorrelation_loss * 1e-6
+            loss = _loss_bp + _loss_mf + _loss_cc 
+            loss = loss + decorrelation_loss * 1e-6
 
             train_loss.append(loss.clone().detach().cpu().numpy())
             optimizer.zero_grad()
@@ -108,10 +91,7 @@ def train(config, suffix, args):
         
         with torch.no_grad():
             for idx_batch, batch in enumerate(val_loader):
-                if config.contrast:
-                    y_pred_bp, y_pred_mf, y_pred_cc, _, _, _, _, _, _, _ = model(batch[0].to(config.device), batch[2].to(config.device), batch[3].to(config.device), batch[4])
-                else:
-                    y_pred, _ = model(batch[0].to(config.device), batch[2].to(config.device), batch[3].to(config.device), batch[4])
+                y_pred_bp, y_pred_mf, y_pred_cc, _ = model(batch[0].to(config.device), batch[2].to(config.device), batch[3].to(config.device), batch[4])
                 y_pred_all_bp.append(y_pred_bp)
                 y_pred_all_mf.append(y_pred_mf)
                 y_pred_all_cc.append(y_pred_cc)
@@ -136,7 +116,7 @@ def train(config, suffix, args):
             if eval_loss < best_eval_loss:
                 best_eval_loss = eval_loss
                 es = 0
-                torch.save(model.state_dict(), config.model_save_path + "multitask" + f"{suffix}.pt")
+                torch.save(model.state_dict(), config.model_save_path + "multitask" + f"{}.pt")
             else:
                 es += 1
                 print("Counter {} of 5".format(es))
@@ -150,7 +130,7 @@ def train(config, suffix, args):
                         "val_aupr_bp": val_aupr_bp,
                         "val_aupr_mf": val_aupr_mf,
                         "val_aupr_cc": val_aupr_cc,
-                    }, config.loss_save_path + "multitask" + f"{suffix}.pt"
+                    }, config.loss_save_path + "multitask" + f"{}.pt"
                 )
 
                 break
@@ -166,10 +146,8 @@ def str2bool(v):
 
 if __name__ == "__main__":
     p = argparse.ArgumentParser()
-    p.add_argument('--suffix', type=str, default='CLaf', help='')
     p.add_argument('--device', type=str, default='', help='')
     p.add_argument('--esmembed', default=True, type=str2bool, help='')
-    p.add_argument('--contrast', default=True, type=str2bool, help='whether to do contrastive learning')
     p.add_argument('--AF2model', default=True, type=str2bool, help='whether to use AF2model for training')
     p.add_argument('--batch_size', type=int, default=64, help='')
     p.add_argument('--num_node', type=int, default=32, help='')
@@ -186,7 +164,6 @@ if __name__ == "__main__":
         config.device = "cuda:" + args.device
     config.esmembed = args.esmembed
     print(args)
-    config.contrast = args.contrast
     config.AF2model = args.AF2model
 
     folder = f"SAM_snode_{args.num_node}_evec_{args.eigenvec_ratio}_head_{args.num_head}_temp_{args.temperature}"
@@ -196,5 +173,5 @@ if __name__ == "__main__":
     config.model_save_path = folder + "/model_"
     config.loss_save_path = folder + "/loss_"
     config.test_result_path = folder + "/test_"
-    train(config, args.suffix, args)
+    train(config, args)
 

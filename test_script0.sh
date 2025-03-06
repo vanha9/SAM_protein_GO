@@ -1,6 +1,5 @@
 experiments=(
   "24 1 0.01 4 1"
-  "24 1 0.025 4 1"
   "24 1 0.05 4 1"
 )
 for exp in "${experiments[@]}"; do

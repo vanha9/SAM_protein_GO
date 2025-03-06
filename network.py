@@ -34,7 +34,7 @@ class GraphCNN(nn.Module):
         self.temperature = args.temperature
     
 
-    def forward(self, x, data, num_vertices, num_edges, evectors, pertubed=False):
+    def forward(self, x, data, num_vertices, num_edges, evectors):
         batch_number = data.batch[-1] + 1
         new_element = torch.tensor([0], device=self.device)
         num_edges = torch.cat((new_element, num_edges))
@@ -100,10 +100,9 @@ class GraphCNN(nn.Module):
 
 
 class CL_protNET(torch.nn.Module):
-    def __init__(self, out_dim, esm_embed=True, pertub=False, num_supernode=1024, device_model=None, args=None):
+    def __init__(self, out_dim, esm_embed=True, num_supernode=1024, device_model=None, args=None):
         super(CL_protNET,self).__init__()
         self.esm_embed = esm_embed
-        self.pertub = pertub
         self.out_dim = out_dim
         self.one_hot_embed = nn.Embedding(21, 96)
         self.proj_aa = nn.Linear(96, 512) 
@@ -152,17 +151,9 @@ class CL_protNET(torch.nn.Module):
     
         gcn_n_feat1, gcn_g_feat_bp1, gcn_g_feat_mf1, gcn_g_feat_cc1, decorrelation_loss = self.gcn(x, data, num_vertices, num_edges, lp_evecs)
         
-        if self.pertub:
-            gcn_n_feat2, gcn_g_feat_bp2, gcn_g_feat_mf2, gcn_g_feat_cc2, decorrelation_loss = self.gcn(x, data, num_vertices, num_edges, lp_evecs, pertubed=True) 
+       
+        y_pred_bp = self.readout_bp(gcn_g_feat_bp1)
+        y_pred_mf = self.readout_mf(gcn_g_feat_mf1)
+        y_pred_cc = self.readout_cc(gcn_g_feat_cc1)
 
-            y_pred_bp = self.readout_bp(gcn_g_feat_bp1)
-            y_pred_mf = self.readout_mf(gcn_g_feat_mf1)
-            y_pred_cc = self.readout_cc(gcn_g_feat_cc1)
-
-            return y_pred_bp, y_pred_mf, y_pred_cc, gcn_g_feat_bp1, gcn_g_feat_mf1, gcn_g_feat_cc1, gcn_g_feat_bp2, gcn_g_feat_mf2, gcn_g_feat_cc2, decorrelation_loss
-        else:
-            y_pred_bp = self.readout_bp(gcn_g_feat_bp1)
-            y_pred_mf = self.readout_mf(gcn_g_feat_mf1)
-            y_pred_cc = self.readout_cc(gcn_g_feat_cc1)
-
-            return y_pred_bp, y_pred_mf, y_pred_cc, decorrelation_loss
+        return y_pred_bp, y_pred_mf, y_pred_cc, decorrelation_loss
