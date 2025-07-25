@@ -116,7 +116,7 @@ def train(config, args):
             if eval_loss < best_eval_loss:
                 best_eval_loss = eval_loss
                 es = 0
-                torch.save(model.state_dict(), config.model_save_path + "multitask.pt")
+                torch.save(model.state_dict(), config.model_save_path + "multitaskCLaf.pt")
             else:
                 es += 1
                 print("Counter {} of 5".format(es))
@@ -130,7 +130,7 @@ def train(config, args):
                         "val_aupr_bp": val_aupr_bp,
                         "val_aupr_mf": val_aupr_mf,
                         "val_aupr_cc": val_aupr_cc,
-                    }, config.loss_save_path + "multitask.pt"
+                    }, config.loss_save_path + "multitaskCLaf.pt"
                 )
 
                 break
